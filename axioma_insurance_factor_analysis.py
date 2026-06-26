@@ -824,27 +824,29 @@ def make_dashboard(results, ls_matrix, pca, expo, out_path, is_synth, ppy):
 
     cmap = plt.cm.tab20(np.linspace(0, 1, len(results)))
     color = {fr.factor: cmap[i] for i, fr in enumerate(results)}
+    best = max(results, key=lambda x: (x.sharpe if not np.isnan(x.sharpe) else -9))
+    bc = color[best.factor]
 
-    # (1) 2-year cumulative L/S
+    # (1) 2-year cumulative L/S — top factor only (single clean line)
     ax = fig.add_subplot(gs[0, 0])
     cutoff = expo["date"].max() - pd.Timedelta(days=730)
-    for fr in results:
-        c = fr.cum[fr.cum.index >= cutoff]
-        if len(c):
-            c = c / c.iloc[0]
-            ax.plot(c.index, c.values, lw=1.3, color=color[fr.factor], label=fr.factor)
-    ax.set_title("2-Year Cumulative L/S Return", fontweight="bold")
+    c = best.cum[best.cum.index >= cutoff]
+    if len(c):
+        c = c / c.iloc[0]
+        ax.plot(c.index, c.values, lw=1.8, color=bc)
+        ax.fill_between(c.index, 1.0, c.values, where=c.values >= 1.0, color=bc, alpha=0.12)
+    ax.set_title(f"2-Year Cumulative L/S — {best.factor}", fontweight="bold")
     ax.axhline(1.0, color="k", lw=0.6, ls="--")
     ax.grid(alpha=0.3)
 
-    # (2) Full-history cumulative L/S
+    # (2) Full-history cumulative L/S — top factor only (single clean line)
     ax = fig.add_subplot(gs[0, 1])
-    for fr in results:
-        ax.plot(fr.cum.index, fr.cum.values, lw=1.2, color=color[fr.factor], label=fr.factor)
-    ax.set_title("Full-History Cumulative L/S Return", fontweight="bold")
+    ax.plot(best.cum.index, best.cum.values, lw=1.8, color=bc)
+    ax.fill_between(best.cum.index, 1.0, best.cum.values, where=best.cum.values >= 1.0,
+                    color=bc, alpha=0.12)
+    ax.set_title(f"Full-History Cumulative L/S — {best.factor}", fontweight="bold")
     ax.axhline(1.0, color="k", lw=0.6, ls="--")
     ax.grid(alpha=0.3)
-    ax.legend(fontsize=6.5, ncol=2, loc="upper left")
 
     # (3) Annualized L/S return bar (color by Sharpe)
     ax = fig.add_subplot(gs[0, 2])
@@ -898,7 +900,6 @@ def make_dashboard(results, ls_matrix, pca, expo, out_path, is_synth, ppy):
 
     # (7) Exposure dispersion over time (breadth of the bet) for top-Sharpe factor
     ax = fig.add_subplot(gs[2, 0])
-    best = max(results, key=lambda x: (x.sharpe if not np.isnan(x.sharpe) else -9))
     zb = (expo[expo["factor"] == best.factor]
           .groupby("date")["zscore"].std())
     ax.plot(zb.index, zb.values, color=color[best.factor], lw=1.1)
@@ -1010,18 +1011,18 @@ def make_advanced_dashboard(results, ls_matrix, expo, rets, universe, macro,
         ax.text(0.5, 0.5, "No macro series", ha="center", va="center"); ax.axis("off")
     ax.grid(alpha=0.3)
 
-    # (6) IC decay curves
+    # (6) IC decay curve — strongest factor only (single clean line)
     ax = fig.add_subplot(gs[1, 2])
     horizons = (1, 5, 21, 63)
-    top = sorted(results, key=lambda x: abs(x.ic_mean), reverse=True)[:6]
-    cmap = plt.cm.tab10(np.linspace(0, 1, len(top)))
-    for c, fr in zip(cmap, top):
-        dec = ic_decay(expo, rets, fr.factor, horizons)
-        ax.plot(horizons, [dec[h] for h in horizons], "o-", color=c, label=fr.factor, lw=1.3)
+    ic_best = max(results, key=lambda x: abs(x.ic_mean) if not np.isnan(x.ic_mean) else 0)
+    dec = ic_decay(expo, rets, ic_best.factor, horizons)
+    yv = [dec[h] for h in horizons]
+    ax.plot(horizons, yv, "o-", color="#1f77b4", lw=1.8)
+    ax.fill_between(horizons, 0, yv, color="#1f77b4", alpha=0.12)
     ax.axhline(0, color="k", lw=0.6, ls="--")
     ax.set_xlabel("forward horizon (periods)"); ax.set_ylabel("mean IC")
-    ax.set_title("IC Decay by Horizon", fontweight="bold")
-    ax.legend(fontsize=6.5); ax.grid(alpha=0.3)
+    ax.set_title(f"IC Decay by Horizon — {ic_best.factor}", fontweight="bold")
+    ax.grid(alpha=0.3)
 
     # (7) Quintile monotonicity for top-4 by |Sharpe|
     ax = fig.add_subplot(gs[2, 0])
