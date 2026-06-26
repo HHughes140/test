@@ -813,7 +813,7 @@ def print_report(results, ls_matrix, pca, reg, crowd_avg, ppy, is_synth, expo, u
 # ----------------------------------------------------------------------------- #
 # Charts
 # ----------------------------------------------------------------------------- #
-def make_dashboard(results, ls_matrix, pca, expo, out_path, is_synth, ppy):
+def make_dashboard(results, ls_matrix, pca, expo, out_path, is_synth, ppy, focus=None):
     C, eigvals, var_exp, eff_bets, eigvecs, cols = pca
     fig = plt.figure(figsize=(20, 13))
     gs = GridSpec(3, 3, figure=fig, hspace=0.42, wspace=0.28)
@@ -824,29 +824,41 @@ def make_dashboard(results, ls_matrix, pca, expo, out_path, is_synth, ppy):
 
     cmap = plt.cm.tab20(np.linspace(0, 1, len(results)))
     color = {fr.factor: cmap[i] for i, fr in enumerate(results)}
-    best = max(results, key=lambda x: (x.sharpe if not np.isnan(x.sharpe) else -9))
-    bc = color[best.factor]
+    # focus = factor(s) to feature; default to the single top-Sharpe factor
+    focus_list = focus or [max(results, key=lambda x: (x.sharpe if not np.isnan(x.sharpe) else -9))]
+    best = focus_list[0]                       # primary, drives single-factor panels (7-9)
+    single = len(focus_list) == 1
+    ttl = best.factor if single else "focus factors"
 
-    # (1) 2-year cumulative L/S — top factor only (single clean line)
+    # (1) 2-year cumulative L/S — focus factor(s)
     ax = fig.add_subplot(gs[0, 0])
     cutoff = expo["date"].max() - pd.Timedelta(days=730)
-    c = best.cum[best.cum.index >= cutoff]
-    if len(c):
-        c = c / c.iloc[0]
-        ax.plot(c.index, c.values, lw=1.8, color=bc)
-        ax.fill_between(c.index, 1.0, c.values, where=c.values >= 1.0, color=bc, alpha=0.12)
-    ax.set_title(f"2-Year Cumulative L/S — {best.factor}", fontweight="bold")
+    for fr in focus_list:
+        c = fr.cum[fr.cum.index >= cutoff]
+        if len(c):
+            c = c / c.iloc[0]
+            ax.plot(c.index, c.values, lw=1.8, color=color[fr.factor], label=fr.factor)
+            if single:
+                ax.fill_between(c.index, 1.0, c.values, where=c.values >= 1.0,
+                                color=color[fr.factor], alpha=0.12)
+    ax.set_title(f"2-Year Cumulative L/S — {ttl}", fontweight="bold")
     ax.axhline(1.0, color="k", lw=0.6, ls="--")
     ax.grid(alpha=0.3)
+    if not single:
+        ax.legend(fontsize=7, loc="upper left")
 
-    # (2) Full-history cumulative L/S — top factor only (single clean line)
+    # (2) Full-history cumulative L/S — focus factor(s)
     ax = fig.add_subplot(gs[0, 1])
-    ax.plot(best.cum.index, best.cum.values, lw=1.8, color=bc)
-    ax.fill_between(best.cum.index, 1.0, best.cum.values, where=best.cum.values >= 1.0,
-                    color=bc, alpha=0.12)
-    ax.set_title(f"Full-History Cumulative L/S — {best.factor}", fontweight="bold")
+    for fr in focus_list:
+        ax.plot(fr.cum.index, fr.cum.values, lw=1.8, color=color[fr.factor], label=fr.factor)
+        if single:
+            ax.fill_between(fr.cum.index, 1.0, fr.cum.values, where=fr.cum.values >= 1.0,
+                            color=color[fr.factor], alpha=0.12)
+    ax.set_title(f"Full-History Cumulative L/S — {ttl}", fontweight="bold")
     ax.axhline(1.0, color="k", lw=0.6, ls="--")
     ax.grid(alpha=0.3)
+    if not single:
+        ax.legend(fontsize=7, loc="upper left")
 
     # (3) Annualized L/S return bar (color by Sharpe)
     ax = fig.add_subplot(gs[0, 2])
@@ -933,7 +945,7 @@ def make_dashboard(results, ls_matrix, pca, expo, out_path, is_synth, ppy):
 
 def make_advanced_dashboard(results, ls_matrix, expo, rets, universe, macro,
                             sub_sharpe, sub_ic, regimes, rate_beta_df,
-                            out_path, is_synth, ppy):
+                            out_path, is_synth, ppy, focus=None):
     """Page 2: charts for sub-industry, regime conditioning, and statistical rigor."""
     fig = plt.figure(figsize=(20, 14))
     gs = GridSpec(3, 3, figure=fig, hspace=0.5, wspace=0.32)
@@ -1011,17 +1023,25 @@ def make_advanced_dashboard(results, ls_matrix, expo, rets, universe, macro,
         ax.text(0.5, 0.5, "No macro series", ha="center", va="center"); ax.axis("off")
     ax.grid(alpha=0.3)
 
-    # (6) IC decay curve — strongest factor only (single clean line)
+    # (6) IC decay curve — focus factor(s)
     ax = fig.add_subplot(gs[1, 2])
     horizons = (1, 5, 21, 63)
-    ic_best = max(results, key=lambda x: abs(x.ic_mean) if not np.isnan(x.ic_mean) else 0)
-    dec = ic_decay(expo, rets, ic_best.factor, horizons)
-    yv = [dec[h] for h in horizons]
-    ax.plot(horizons, yv, "o-", color="#1f77b4", lw=1.8)
-    ax.fill_between(horizons, 0, yv, color="#1f77b4", alpha=0.12)
+    focus_list = focus or [max(results, key=lambda x: abs(x.ic_mean) if not np.isnan(x.ic_mean) else 0)]
+    if len(focus_list) == 1:
+        fr = focus_list[0]
+        yv = [ic_decay(expo, rets, fr.factor, horizons)[h] for h in horizons]
+        ax.plot(horizons, yv, "o-", color="#1f77b4", lw=1.8)
+        ax.fill_between(horizons, 0, yv, color="#1f77b4", alpha=0.12)
+        ax.set_title(f"IC Decay by Horizon — {fr.factor}", fontweight="bold")
+    else:
+        cmap2 = plt.cm.tab10(np.linspace(0, 1, len(focus_list)))
+        for col, fr in zip(cmap2, focus_list):
+            yv = [ic_decay(expo, rets, fr.factor, horizons)[h] for h in horizons]
+            ax.plot(horizons, yv, "o-", color=col, lw=1.5, label=fr.factor)
+        ax.legend(fontsize=6.5)
+        ax.set_title("IC Decay by Horizon — focus factors", fontweight="bold")
     ax.axhline(0, color="k", lw=0.6, ls="--")
     ax.set_xlabel("forward horizon (periods)"); ax.set_ylabel("mean IC")
-    ax.set_title(f"IC Decay by Horizon — {ic_best.factor}", fontweight="bold")
     ax.grid(alpha=0.3)
 
     # (7) Quintile monotonicity for top-4 by |Sharpe|
@@ -1091,7 +1111,11 @@ def main(argv=None):
     p.add_argument("--universe", help="CSV/Parquet: [asset_id, name, in_insurance, sub_industry]")
     p.add_argument("--macro", help="CSV/Parquet: [date, ten_year, credit_spread, vix]")
     p.add_argument("--out", default="insurance_factor_dashboard.png", help="output PNG")
-    p.add_argument("--factors", nargs="*", help="restrict to these factor names")
+    p.add_argument("--factors", nargs="*", help="restrict analysis to these factor names")
+    p.add_argument("--focus-factors", nargs="*",
+                   help="factor name(s) to feature in the single-line charts "
+                        "(default: top factor by Sharpe). One name = single line; "
+                        'a few = a small labeled set. e.g. --focus-factors "Value" "Momentum"')
     args = p.parse_args(argv)
 
     expo, rets, universe, macro, is_synth = load_data(args)
@@ -1120,8 +1144,22 @@ def main(argv=None):
     reg = basket_factor_regression(expo, rets, ls_matrix, universe)
     _, crowd_avg = exposure_crowding(expo, factors)
 
+    # resolve --focus-factors to result objects (preserve requested order)
+    name_to_fr = {fr.factor: fr for fr in results}
+    focus = None
+    if args.focus_factors:
+        focus = [name_to_fr[f] for f in args.focus_factors if f in name_to_fr]
+        missing = [f for f in args.focus_factors if f not in name_to_fr]
+        if missing:
+            print(f">> Note: focus factor(s) unavailable / no signal: {', '.join(missing)}")
+        if not focus:
+            print(">> No requested focus factors available; defaulting to top factor by Sharpe.")
+            focus = None
+        else:
+            print(f">> Charts focused on: {', '.join(fr.factor for fr in focus)}\n")
+
     print_report(results, ls_matrix, pca, reg, crowd_avg, ppy, is_synth, expo, universe)
-    make_dashboard(results, ls_matrix, pca, expo, args.out, is_synth, ppy)
+    make_dashboard(results, ls_matrix, pca, expo, args.out, is_synth, ppy, focus=focus)
 
     # ---- advanced modules: sub-industry, regime, statistical rigor ----
     sub_sharpe, sub_ic = subindustry_decomposition(expo, rets, universe, factors, ppy)
@@ -1134,7 +1172,7 @@ def main(argv=None):
     adv_out = f"{stem[0]}_advanced.{stem[1] if len(stem) > 1 else 'png'}"
     make_advanced_dashboard(results, ls_matrix, expo, rets, universe, macro,
                             sub_sharpe, sub_ic, regimes, rate_beta_df,
-                            adv_out, is_synth, ppy)
+                            adv_out, is_synth, ppy, focus=focus)
 
 
 def print_advanced(sub_sharpe, sub_ic, regimes, rate_beta_df, results, ls_matrix,
