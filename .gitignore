@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+# real data exports (keep proprietary Axioma data out of git)
+*.parquet
+expo.csv
+rets.csv
+univ.csv
+macro.csv
